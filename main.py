@@ -17,36 +17,46 @@ class StartPage(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        # reuse existing layout if present, otherwise create and set one
+        layout = self.layout() or QVBoxLayout()
+        if self.layout() is None:
+            self.setLayout(layout)
+
+        # clear existing widgets from the layout
+        for i in reversed(range(layout.count())):
+            item = layout.itemAt(i)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+            layout.removeItem(item)
 
         data = self.controller.load_data()
         if data is None:
             welcome_label = QLabel("Welcome to Note App!\nNo data found. Please create a new note.")
             layout.addWidget(welcome_label)
-            self.setLayout(layout)
             return
-        
+
         welcome_label = QLabel("Welcome to Note App!")
         layout.addWidget(welcome_label)
-        count = len(data["notes"]) if "notes" in data else 0
+        count = len(data.get("notes", []))
 
-        for i in range(count):
-            note = data["notes"][i]
+        for note in reversed(data.get("notes", [])):
             title = f"""{note['date']}
-📄 {note["title"]}"""
+📄 {note['title']}"""
             note_button = QPushButton(title)
-            note_button.clicked.connect(lambda: self.controller.open_notes_page(note['id']))
+            # fix closure: bind current note to default arg
+            note_button.clicked.connect(lambda n=note: self.controller.open_notes_page(n['id']))
             note_button.setStyleSheet("text-align: left; padding: 10px;")
             layout.addWidget(note_button)
 
         add_btn = QPushButton("➕ Add Note")
-        add_btn.clicked.connect(self.controller.add_new_note)
+        add_btn.clicked.connect(lambda: self.controller.add_new_note())
 
         layout.addStretch()
         layout.addWidget(add_btn)
-
-        self.setLayout(layout)
-
+    
+    def refresh(self):
+        self.init_ui()
 
 class NotesPage(QWidget):
     def __init__(self, controller):
@@ -88,9 +98,6 @@ class MainWindow(QMainWindow):
             return
         
         self.stack.setCurrentWidget(page)
-        
-        if hasattr(page, "refresh") and callable(page.refresh):
-            page.refresh()
     
     def save_data(self, data):
         with open(self.file_path, "w", encoding="utf-8") as f:
@@ -113,7 +120,19 @@ class MainWindow(QMainWindow):
         self.show_page("Notes")
 
     def add_new_note(self):
-        pass
+        data = self.load_data()
+        if data is None:
+            return
+        new_id = max([note['id'] for note in data['notes']], default=0) + 1
+        new_note = {
+            "id": new_id,
+            "title": "New Note",
+            "content": "",
+            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        data['notes'].append(new_note)
+        self.save_data(data)
+        self.start_page.refresh()
 
 # ----------------- Run App -----------------
 def main():
