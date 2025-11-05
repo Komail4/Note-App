@@ -1,138 +1,195 @@
 import sys
+import os
+import json
+import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
-    QStackedWidget, QHBoxLayout, QLineEdit, QTextEdit, QListWidget, QDialog,
-    QDialogButtonBox
+    QStackedWidget, QHBoxLayout, QLineEdit, QTextEdit
 )
 from PyQt5.QtCore import Qt
-import json
-import os
-import datetime
 
-# ----------------- Pages -----------------
+
+# ----------------- Start Page -----------------
 class StartPage(QWidget):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
-        self.init_ui()
+        self.setLayout(QVBoxLayout())
+        self.refresh()
 
-    def init_ui(self):
-        # reuse existing layout if present, otherwise create and set one
-        layout = self.layout() or QVBoxLayout()
-        if self.layout() is None:
-            self.setLayout(layout)
+    def clear_layout(self):
+        layout = self.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-        # clear existing widgets from the layout
-        for i in reversed(range(layout.count())):
-            item = layout.itemAt(i)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-            layout.removeItem(item)
+    def refresh(self):
+        self.clear_layout()
+        layout = self.layout()
 
         data = self.controller.load_data()
-        if data is None:
-            welcome_label = QLabel("Welcome to Note App!\nNo data found. Please create a new note.")
-            layout.addWidget(welcome_label)
-            return
+        notes = data.get("notes", [])
 
-        welcome_label = QLabel("Welcome to Note App!")
-        layout.addWidget(welcome_label)
-        count = len(data.get("notes", []))
-
-        for note in reversed(data.get("notes", [])):
-            title = f"""{note['date']}
-📄 {note['title']}"""
-            note_button = QPushButton(title)
-            # fix closure: bind current note to default arg
-            note_button.clicked.connect(lambda n=note: self.controller.open_notes_page(n['id']))
-            note_button.setStyleSheet("text-align: left; padding: 10px;")
-            layout.addWidget(note_button)
+        if not notes:
+            layout.addWidget(QLabel("Welcome to Note App!\nNo notes found. Please create a new note."))
+        else:
+            layout.addWidget(QLabel("Welcome to Note App!"))
+            for note in reversed(notes):
+                if not isinstance(note, dict) or "id" not in note:
+                    continue
+                title = f"{note.get('date', '')}\n📄 {note.get('title', '<untitled>')}"
+                btn = QPushButton(title)
+                btn.setStyleSheet("text-align: left; padding: 10px;")
+                btn.clicked.connect(lambda _, n=note: self.controller.open_notes_page(n))
+                layout.addWidget(btn)
 
         add_btn = QPushButton("➕ Add Note")
-        add_btn.clicked.connect(lambda: self.controller.add_new_note())
-
+        add_btn.clicked.connect(self.controller.add_new_note)
         layout.addStretch()
         layout.addWidget(add_btn)
-    
-    def refresh(self):
-        self.init_ui()
 
+
+# ----------------- Notes Page -----------------
 class NotesPage(QWidget):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
-        self.init_ui()
+        self.setLayout(QVBoxLayout())
 
-    def init_ui(self):
-        layout = QVBoxLayout()
+    def clear_layout(self):
+        layout = self.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-        self.setLayout(layout)
+    def refresh(self):
+        self.clear_layout()
+        layout = self.layout()
+
+        note = self.controller.current_note
+        if not note:
+            layout.addWidget(QLabel("Note not found."))
+            back_btn = QPushButton("🔙 Back to Notes List")
+            back_btn.clicked.connect(self.controller.back_to_start)
+            layout.addWidget(back_btn)
+            return
+
+        # Title
+        title_layout = QHBoxLayout()
+        title_label = QLabel("Title:")
+        title_edit = QLineEdit(note.get("title", ""))
+        title_edit.textChanged.connect(lambda text: note.update({"title": text}))
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(title_edit)
+        layout.addLayout(title_layout)
+
+        # Content
+        content_label = QLabel("Content:")
+        content_edit = QTextEdit()
+        content_edit.setPlainText(note.get("content", ""))
+        content_edit.textChanged.connect(lambda: note.update({"content": content_edit.toPlainText()}))
+        layout.addWidget(content_label)
+        layout.addWidget(content_edit)
+
+        # Buttons
+        save_btn = QPushButton("💾 Save Note")
+        save_btn.clicked.connect(lambda: self.controller.save_note_changes(note))
+        back_btn = QPushButton("🔙 Back to Notes List")
+        back_btn.clicked.connect(self.controller.back_to_start)
+        layout.addWidget(save_btn)
+        layout.addWidget(back_btn)
+
+        layout.addStretch()
+
 
 # ----------------- Main Window -----------------
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Note App")
-        self.setGeometry(200, 200, 700, 1000)
-
+        self.setGeometry(200, 200, 700, 900)
         self.file_path = "Note app/data.json"
+        self.current_note = None
 
+        # Stack
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
+        # Pages
         self.start_page = StartPage(self)
         self.notes_page = NotesPage(self)
-
         self.stack.addWidget(self.start_page)
         self.stack.addWidget(self.notes_page)
 
         self.show_page("Start")
 
+    # -------- Navigation --------
     def show_page(self, name):
         if name == "Start":
-            page = self.start_page
+            self.start_page.refresh()
+            self.stack.setCurrentWidget(self.start_page)
         elif name == "Notes":
-            page = self.notes_page
-        else:
-            return
-        
-        self.stack.setCurrentWidget(page)
-    
-    def save_data(self, data):
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    
+            self.notes_page.refresh()
+            self.stack.setCurrentWidget(self.notes_page)
+
+    def back_to_start(self):
+        self.current_note = None
+        self.show_page("Start")
+
+    def open_notes_page(self, note):
+        """Open selected note"""
+        self.current_note = note
+        self.show_page("Notes")
+
+    # -------- Data Handling --------
     def load_data(self):
         if not os.path.exists(self.file_path):
-            # messagebox.showerror("Error", "File did not found")
-            print("File did not found")
-            return None
+            return {"notes": []}
         try:
-            with open(self.file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            # messagebox.showerror("Error", "Data file not found.")
-            print("Data file not found.")
-            return None 
-    
-    def open_notes_page(self, id):
-        self.show_page("Notes")
+            with open(self.file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "notes" in data:
+                return data
+            if isinstance(data, list):
+                return {"notes": data}
+        except (json.JSONDecodeError, OSError):
+            pass
+        return {"notes": []}
+
+    def save_data(self, data):
+        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+    def save_note_changes(self, updated_note):
+        """Replace or add a note"""
+        data = self.load_data()
+        notes = data.get("notes", [])
+        for i, n in enumerate(notes):
+            if n.get("id") == updated_note.get("id"):
+                notes[i] = updated_note
+                break
+        else:
+            notes.append(updated_note)
+        self.save_data({"notes": notes})
+        self.back_to_start()
 
     def add_new_note(self):
         data = self.load_data()
-        if data is None:
-            return
-        new_id = max([note['id'] for note in data['notes']], default=0) + 1
+        notes = data.get("notes", [])
+        new_id = max((n.get("id", 0) for n in notes), default=0) + 1
         new_note = {
             "id": new_id,
             "title": "New Note",
             "content": "",
-            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
-        data['notes'].append(new_note)
-        self.save_data(data)
+        notes.append(new_note)
+        self.save_data({"notes": notes})
         self.start_page.refresh()
+
 
 # ----------------- Run App -----------------
 def main():
