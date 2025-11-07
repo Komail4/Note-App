@@ -1,0 +1,22 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual envs
+env/
+venv/
+.venv/
+
+# Editor / OS
+.vscode/
+.DS_Store
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
