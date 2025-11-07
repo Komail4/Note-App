@@ -1,0 +1,20 @@
+{
+    "notes": [
+        {
+            "id": 1,
+            "title": "Komail",
+            "content": "Hello",
+            "date": "2025-11-07 18:14:50",
+            "tags": [],
+            "last_edited": "2025-11-07 18:15:00"
+        },
+        {
+            "id": 2,
+            "title": "New Note",
+            "content": "Hello my Name is Komail!",
+            "date": "2025-11-07 18:15:09",
+            "tags": [],
+            "last_edited": "2025-11-07 18:15:42"
+        }
+    ]
+}
